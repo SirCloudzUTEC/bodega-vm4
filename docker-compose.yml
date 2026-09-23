@@ -1,0 +1,66 @@
+# Bodega Inteligente - VM4: MV Ingesta (subred privada).
+# `docker compose up --build` corre los 4 jobs de ingesta (1 contenedor por
+# microservicio con base de datos) y, si los 4 terminan bien, registra el
+# catálogo en Glue. Todos son jobs puntuales: terminan y salen (no quedan corriendo).
+name: bodega-ingesta
+
+x-ingesta: &ingesta
+  build: ./ingesta
+  image: bodega-ingesta:latest
+  restart: "no"
+
+x-destino: &destino
+  DB_HOST: ${DB_HOST:?Falta DB_HOST en .env}
+  S3_BUCKET: ${S3_BUCKET:?Falta S3_BUCKET en .env}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  DATA_DATE: ${DATA_DATE:-}
+
+services:
+  ingesta-inventario:        # microservicio Inventario  -> MySQL inventario_db
+    <<: *ingesta
+    environment:
+      <<: *destino
+      JOB: inventario
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Falta MYSQL_PASSWORD en .env}
+
+  ingesta-proveedores:       # microservicio Proveedores -> MySQL proveedores_db
+    <<: *ingesta
+    environment:
+      <<: *destino
+      JOB: proveedores
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Falta MYSQL_PASSWORD en .env}
+
+  ingesta-ventas:            # microservicio Ventas      -> PostgreSQL ventas_db
+    <<: *ingesta
+    environment:
+      <<: *destino
+      JOB: ventas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+
+  ingesta-prediccion:        # microservicio Predicción  -> MongoDB prediccion_db
+    <<: *ingesta
+    environment:
+      <<: *destino
+      JOB: prediccion
+      MONGO_PASSWORD: ${MONGO_PASSWORD:?Falta MONGO_PASSWORD en .env}
+
+  catalogo-glue:             # 1 tabla Glue por archivo + partición dt (tras los 4 jobs)
+    <<: *ingesta
+    command: ["python", "catalogo_glue.py"]
+    environment:
+      S3_BUCKET: ${S3_BUCKET:?Falta S3_BUCKET en .env}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      ATHENA_DATABASE: ${ATHENA_DATABASE:-bodega_h2}
+      DATA_DATE: ${DATA_DATE:-}
+    depends_on:
+      ingesta-inventario: {condition: service_completed_successfully}
+      ingesta-proveedores: {condition: service_completed_successfully}
+      ingesta-ventas: {condition: service_completed_successfully}
+      ingesta-prediccion: {condition: service_completed_successfully}
+
+  prediccion-nocturna:       # solo con --profile nocturno (lo usa el timer de las 02:00)
+    <<: *ingesta
+    profiles: ["nocturno"]
+    command: ["python", "prediccion_nocturna.py"]
+    environment:
+      BODEGA_ALB_DNS: ${BODEGA_ALB_DNS:-}

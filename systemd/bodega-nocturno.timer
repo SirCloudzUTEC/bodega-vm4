@@ -1,0 +1,10 @@
+[Unit]
+Description=Bodega Inteligente - pipeline diario a las 02:00 de Perú
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 UTC
+Persistent=true
+Unit=bodega-nocturno.service
+
+[Install]
+WantedBy=timers.target

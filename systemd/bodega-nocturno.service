@@ -1,0 +1,10 @@
+[Unit]
+Description=Bodega Inteligente - predicción nocturna, ingesta y catálogo Glue
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__DIR__
+ExecStart=/usr/bin/env bash __DIR__/pipeline_nocturno.sh
+TimeoutStartSec=5400
